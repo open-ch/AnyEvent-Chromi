@@ -1,0 +1,122 @@
+#!/usr/bin/perl -w
+
+use 5.014;
+use Log::Any qw($log);
+use Log::Any::Adapter;
+use Log::Dispatch;
+use AnyEvent;
+use AnyEvent::Socket;
+use AnyEvent::Handle;
+use Protocol::WebSocket::Handshake::Server;
+use Protocol::WebSocket::Frame;
+
+my $tcp_server;
+my %clients;
+my %chromi;
+
+sub start_server
+{
+    $tcp_server = AnyEvent::Socket::tcp_server undef, 7441, sub {
+        my ($fh, $host, $port) = @_;
+
+        $log->info("connected (host: $host, port: $port)");
+     
+        my $ws_handshake = Protocol::WebSocket::Handshake::Server->new;
+        my $ws_frame = Protocol::WebSocket::Frame->new;
+     
+        my $handle = AnyEvent::Handle->new(fh => $fh);
+        $clients{$handle} = { host => $host, port => $port };
+
+        $handle->on_error(
+            sub {
+                my ($handle, $fatal, $message);
+                if($fatal) {
+                    $log->error("connection error: $message");
+                }
+                else {
+                    $log->warning("connection error: $message");
+                }
+            }
+        );
+
+        $handle->on_eof(
+            sub {
+                $log->info("disconnected: $host:$port");
+                delete $clients{$handle};
+                delete $chromi{$handle};
+            }
+        );
+     
+        $handle->on_read(
+            sub {
+                my $chunk = $handle->{rbuf};
+                $handle->{rbuf} = undef;
+     
+                # Handshake
+                if (!$ws_handshake->is_done) {
+                    $ws_handshake->parse($chunk);
+                    if ($ws_handshake->is_done) {
+                        $handle->push_write($ws_handshake->to_string);
+                    }
+                }
+                $ws_handshake->is_done() or return;
+     
+                # Data
+                $ws_frame->append($chunk);
+                while (my $message = $ws_frame->next) {
+                    if($message =~ /^Chromi (\d+) (\w+) (.*)$/) {
+                        my ($id, $status, $reply) = ($1, $2, $3);
+                        use DDP;
+                        say "$id $status $reply";
+                        #if($self->{callbacks}{$id}) {
+                        #    $reply = uri_unescape($reply);
+                        #    if($reply =~ /^\[(.*)\]$/s) {
+                        #        &{$self->{callbacks}{$id}}($status, decode_json($1));
+                        #    }
+                        #    else {
+                        #        die "error: $reply\n";
+                        #    }
+                        #    delete $self->{callbacks}{$id};
+                        #}
+                    }
+                    elsif($message =~ /^Chromi \S+ info connected/) {
+                        $log->info("chrome detected (host: $host, port: $port)");
+                        $chromi{$handle} = 1;
+                        delete $clients{$handle};
+                    }
+                    elsif($message =~ /^Chromi \S+ info heartbeat/) {
+                    }
+                    elsif($message =~ /^chromi \d+ \S+ (.*)$/) {
+                        $log->info($message);
+                        # client to chrome
+                        for my $c (keys %chromi) {
+                            my $frame = Protocol::WebSocket::Frame->new($message);
+                            $c->push_write($frame->to_bytes);
+                        }
+                    }
+                    else {
+                        $log->info("other: $message");
+                    }
+                }
+            }
+        );
+    };
+}
+
+sub main()
+{
+    my $ld_log = Log::Dispatch->new(
+       outputs => [
+	    [ 'Syslog', min_level => 'info', ident  => 'chrome-siteshow' ],
+	    [ 'Screen', min_level => 'debug', newline => 1 ],
+	]
+    );
+    Log::Any::Adapter->set( 'Dispatch', dispatcher => $ld_log );
+
+    $log->info("starting up");
+    my $cv = AnyEvent->condvar;
+    start_server();
+    $cv->wait();
+}
+
+main;
