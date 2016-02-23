@@ -13,6 +13,7 @@ use Protocol::WebSocket::Frame;
 my $tcp_server;
 my %clients;
 my %chromi;
+my %requests;
 
 sub start_server
 {
@@ -65,31 +66,32 @@ sub start_server
                 $ws_frame->append($chunk);
                 while (my $message = $ws_frame->next) {
                     if($message =~ /^Chromi (\d+) (\w+) (.*)$/) {
+                        # chrome to client
                         my ($id, $status, $reply) = ($1, $2, $3);
-                        use DDP;
-                        say "$id $status $reply";
-                        #if($self->{callbacks}{$id}) {
-                        #    $reply = uri_unescape($reply);
-                        #    if($reply =~ /^\[(.*)\]$/s) {
-                        #        &{$self->{callbacks}{$id}}($status, decode_json($1));
-                        #    }
-                        #    else {
-                        #        die "error: $reply\n";
-                        #    }
-                        #    delete $self->{callbacks}{$id};
-                        #}
+                        if(defined $requests{$id}) {
+                            my $c = $requests{$id};
+                            if(defined $clients{$c}) {
+                                my $frame = Protocol::WebSocket::Frame->new($message);
+                                $log->debug("sending reply for $id");
+                                $c->push_write($frame->to_bytes);
+                            }
+                        }
+                        delete $requests{$id};
                     }
                     elsif($message =~ /^Chromi \S+ info connected/) {
                         $log->info("chrome detected (host: $host, port: $port)");
-                        $chromi{$handle} = 1;
+                        $chromi{$handle}{handle} = $handle;
                         delete $clients{$handle};
                     }
                     elsif($message =~ /^Chromi \S+ info heartbeat/) {
                     }
-                    elsif($message =~ /^chromi \d+ \S+ (.*)$/) {
-                        $log->info($message);
+                    elsif($message =~ /^chromi (\d+) \S+ .*$/) {
+                        $log->info("received: $message");
+                        # register who made the request
+                        $requests{$1} = $handle;
                         # client to chrome
-                        for my $c (keys %chromi) {
+                        for my $key (keys %chromi) {
+                            my $c = $chromi{$key}{handle};
                             my $frame = Protocol::WebSocket::Frame->new($message);
                             $c->push_write($frame->to_bytes);
                         }

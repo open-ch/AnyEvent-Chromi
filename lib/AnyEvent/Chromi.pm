@@ -5,6 +5,7 @@ use strict;
 use AnyEvent::Socket;
 use AnyEvent::Handle;
  
+use Protocol::WebSocket::Handshake::Client;
 use Protocol::WebSocket::Handshake::Server;
 use Protocol::WebSocket::Frame;
 
@@ -19,6 +20,7 @@ sub new
     bless $self, $class;
 
     $self->{mode} = $args{mode} // 'server';
+    $self->{on_connect} = $args{on_connect} if defined $args{on_connect};
     if($self->{mode} eq 'client') {
         $self->_start_client();
     }
@@ -32,6 +34,11 @@ sub new
 sub call
 {
     my ($self, $method, $args, $cb) = @_;
+    if(not $self->is_connected) {
+        $log->warning("can't call $method: not connected");
+        return;
+    }
+    $log->info("calling $method");
     my $id = int(rand(100000000));
     my $msg = "chromi $id $method";
     if($args) {
@@ -41,7 +48,6 @@ sub call
     if($cb) {
         $self->{callbacks}{$id} = $cb;
     }
-
     $self->{handle}->push_write($frame->to_bytes);
 }
 
@@ -55,8 +61,9 @@ sub _setup_connection
 {
     my ($self, $fh) = @_;
 
-    my $ws_handshake = Protocol::WebSocket::Handshake::Server->new;
-    my $ws_frame     = Protocol::WebSocket::Frame->new;
+    my $ws_handshake = $self->{mode} eq 'client' ? Protocol::WebSocket::Handshake::Client->new(url => 'ws://localhost') :
+                                                   Protocol::WebSocket::Handshake::Server->new;
+    my $ws_frame = Protocol::WebSocket::Frame->new;
     
     $self->{handle} = AnyEvent::Handle->new(fh => $fh);
 
@@ -89,8 +96,14 @@ sub _setup_connection
         if (!$ws_handshake->is_done) {
             $ws_handshake->parse($chunk);
             if ($ws_handshake->is_done) {
-                $handle->push_write($ws_handshake->to_string);
+                if(not $self->{mode} eq 'client') {
+                    $handle->push_write($ws_handshake->to_string);
+                }
                 $self->{connected} = 1;
+                if($self->{on_connect}) {
+                    my $cb = $self->{on_connect};
+                    &$cb($self);
+                }
             }
         }
         
@@ -115,11 +128,17 @@ sub _setup_connection
             }
         }
     });
+
+    if($self->{mode} eq 'client') {
+        $self->{handle}->push_write($ws_handshake->to_string);
+    }
 }
 
 sub _client_schedule_reconnect
 {
     my ($self) = @_;
+
+    $log->info("connection failed. reconnecting in 1 second");
 
     $self->{conn_w} = AnyEvent->timer (after => 1, cb => sub {
         $self->_start_client();
