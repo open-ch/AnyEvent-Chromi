@@ -38,7 +38,6 @@ sub call
         $log->warning("can't call $method: not connected");
         return;
     }
-    $log->info("calling $method");
     my $id = int(rand(100000000));
     my $msg = "chromi $id $method";
     if($args) {
@@ -173,13 +172,81 @@ sub _start_server
 
 =head1 NAME
 
-AnyEvent::Chromi - Control Google Chrome from Perl
+AnyEvent::Chromi - Remotely control Google Chrome from Perl
 
 =head2 SYNOPSIS
 
-    $chromi = AnyEvent::Chromi->new();
+    # Start in client mode (need "chromix-server" or examples/server.pl)
+    my $chromi AnyEvent::Chromi->new(mode => 'client', on_connect => sub {
+        my ($chromi) = @_;
+        ...
+        $chromi->call(...);
+    });
 
-    # get windows and tabs list
+    # Start in server mode
+    my $chromi AnyEvent::Chromi->new(mode => 'server');
+
+=head2 DESCRIPTION
+
+AnyEvent::Chromi allows you to remotely control Google Chrome from a Perl script.
+It requires the Chromi extension L<https://github.com/smblott-github/chromi>, which
+exposes all of the Chrome Extensions API via a websocket connection.
+
+=head2 METHODS
+
+=over 4
+
+=item $chromi = AnyEvent::Chromi->new(mode => ..., on_connect => ...);
+
+=over 4
+
+=item mode => 'client|server'
+
+If 'server' (default), it will start a websocket server on port 7441 and wait
+for the connection from Chrome (initiated by the Chromi extension). This is the
+most practical way to use AnyEvent::Chromi if you write a long-running script,
+because it doesn't require a separate daemon.
+
+If 'client', it will connect to port 7441 itself, expecting a websocket server, like
+the one provided by chromix-server, or by the examples/server.pl script.
+
+=item on_connect => sub { my ($chromi) = @_; ... }
+
+Will be executed as soon as Chrome connects (in server mode), or as the connection
+to the websocket server is done.
+
+=back
+
+=item $chromi->call($method, $args, $cb)
+
+Call the Chrome extension method C<$method>, e.g. C<chrome.windows.getAll>.
+
+C<$args> is expected to be a ARRAYREF with the arguments for the method. It will be
+converted to JSON by AnyEvent::Chromi.
+
+C<$cb> is a callback for when the reply is received. The first argument to the callback is
+the status (either "done" or "error"), and the second is a ARRAYREF with the data.
+
+Note: you need to make sure that the JSON::XS serialization is generating the proper
+data types. This is particularly important for booleans, where C<Types::Serialiser::true>
+and C<Types::Serialiser::false> can be used.
+
+=item $chromi->is_connected
+
+In server mode: returns true if Chrome is connected and awaits commands.
+
+In client mode: returns true if connected to chromix-server.
+
+=back
+
+=head2 EXAMPLES
+
+=over
+
+=item *
+
+List all tabs
+
     $chromi->call(
         'chrome.windows.getAll', [{ populate => Types::Serialiser::true }],
         sub {
@@ -187,13 +254,51 @@ AnyEvent::Chromi - Control Google Chrome from Perl
             $status eq 'done' or return;
             defined $reply and ref $reply eq 'ARRAY' or return;
             map { say "$_->{url}" } @{$reply->[0]{tabs}};
+            $cv->send();
         }
-    );
 
-    # focus a tab
+=item * Focus a tab
+
     $chromi->call(
         'chrome.tabs.update', [$tab_id, { active => Types::Serialiser::true }],
     );
 
+=back
 
-=head2 DESCRIPTION
+See also the "examples" directory:
+
+=over
+
+=item examples/client.pl
+
+Lists the URLs of all tabs. Requires chromix-server
+
+=item examples/server.pl
+
+chromix-server replacement written in Perl. Additionally to chromix-server, it
+also properly supports multiple clients with one or more chrome instances.
+
+=back
+
+=head2 AUTHOR
+
+David Schweikert <david@schweikert.ch>, heavily influenced by Chromi/Chromix by
+Stephen Blott.
+
+=head2 SEE ALSO
+
+=over
+
+=item GitHub project
+
+L<https://github.com/open-ch/AnyEvent-Chromi>
+
+=item Chromi (Chrome extension)
+
+L<https://github.com/smblott-github/chromi>
+
+=item Chromix (command-line tool)
+
+L<https://http://chromix.smblott.org/>
+
+=back

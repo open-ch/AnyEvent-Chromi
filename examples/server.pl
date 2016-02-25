@@ -9,6 +9,8 @@ use AnyEvent::Socket;
 use AnyEvent::Handle;
 use Protocol::WebSocket::Handshake::Server;
 use Protocol::WebSocket::Frame;
+use JSON::XS;
+use URI::Escape;
 
 my $tcp_server;
 my %clients;
@@ -66,7 +68,8 @@ sub start_server
                 $ws_frame->append($chunk);
                 while (my $message = $ws_frame->next) {
                     if($message =~ /^Chromi (\d+) (\w+) (.*)$/) {
-                        # chrome to client
+                        # Chrome to Client
+
                         my ($id, $status, $reply) = ($1, $2, $3);
                         if(defined $requests{$id}) {
                             my $c = $requests{$id};
@@ -86,14 +89,23 @@ sub start_server
                     elsif($message =~ /^Chromi \S+ info heartbeat/) {
                     }
                     elsif($message =~ /^chromi (\d+) \S+ .*$/) {
+                        # Client to Chrome
+
                         $log->info("received: $message");
                         # register who made the request
                         $requests{$1} = $handle;
-                        # client to chrome
-                        for my $key (keys %chromi) {
-                            my $c = $chromi{$key}{handle};
-                            my $frame = Protocol::WebSocket::Frame->new($message);
-                            $c->push_write($frame->to_bytes);
+                        # chrome isn't connected
+                        if(not scalar keys %chromi) {
+                            my $reply = "Chromi $1 error " . uri_escape(encode_json({ error => 'chrome not connected'}));
+                            my $frame = Protocol::WebSocket::Frame->new($reply);
+                            $handle->push_write($frame->to_bytes);
+                        }
+                        else {
+                            for my $key (keys %chromi) {
+                                my $c = $chromi{$key}{handle};
+                                my $frame = Protocol::WebSocket::Frame->new($message);
+                                $c->push_write($frame->to_bytes);
+                            }
                         }
                     }
                     else {
