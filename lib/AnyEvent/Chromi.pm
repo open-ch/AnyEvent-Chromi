@@ -13,6 +13,8 @@ use JSON::XS;
 use URI::Escape;
 use Log::Any qw($log);
 
+our $VERSION = '1.00';
+
 sub new
 {
     my ($class, %args) = @_;
