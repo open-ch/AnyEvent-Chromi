@@ -13,7 +13,7 @@ use JSON::XS;
 use URI::Escape;
 use Log::Any qw($log);
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 sub new
 {
@@ -22,6 +22,7 @@ sub new
     bless $self, $class;
 
     $self->{mode} = $args{mode} // 'server';
+    $self->{port} = $args{port} // 7441;
     $self->{on_connect} = $args{on_connect} if defined $args{on_connect};
     if($self->{mode} eq 'client') {
         $self->_start_client();
@@ -150,7 +151,7 @@ sub _start_client
 {
     my ($self) = @_;
 
-    $self->{tcp_client} = AnyEvent::Socket::tcp_connect 'localhost', 7441, sub {
+    $self->{tcp_client} = AnyEvent::Socket::tcp_connect 'localhost', $self->{port}, sub {
         my ($fh) = @_;
         if(! $fh) {
             $self->_client_schedule_reconnect();
@@ -164,7 +165,7 @@ sub _start_client
 sub _start_server
 {
     my ($self) = @_;
-    $self->{tcp_server} = AnyEvent::Socket::tcp_server undef, 7441, sub {
+    $self->{tcp_server} = AnyEvent::Socket::tcp_server undef, $self->{port}, sub {
         my ($fh, $host, $port) = @_;
         $self->_setup_connection($fh);
     };
@@ -211,6 +212,10 @@ because it doesn't require a separate daemon.
 
 If 'client', it will connect to port 7441 itself, expecting a websocket server, like
 the one provided by chromix-server, or by the examples/server.pl script.
+
+=item port => N
+
+Use port N instead of 7441.
 
 =item on_connect => sub { my ($chromi) = @_; ... }
 

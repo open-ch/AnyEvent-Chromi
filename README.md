@@ -33,6 +33,10 @@ exposes all of the Chrome Extensions API via a websocket connection.
         If 'client', it will connect to port 7441 itself, expecting a websocket server, like
         the one provided by chromix-server, or by the examples/server.pl script.
 
+    - port => N
+
+        Use port N instead of 7441.
+
     - on\_connect => sub { my ($chromi) = @\_; ... }
 
         Will be executed as soon as Chrome connects (in server mode), or as the connection
