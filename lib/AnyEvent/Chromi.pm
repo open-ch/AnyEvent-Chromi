@@ -177,7 +177,7 @@ sub _start_server
 
 AnyEvent::Chromi - Remotely control Google Chrome from Perl
 
-=head2 SYNOPSIS
+=head1 SYNOPSIS
 
     # Start in client mode (need "chromix-server" or examples/server.pl)
     my $chromi AnyEvent::Chromi->new(mode => 'client', on_connect => sub {
@@ -189,13 +189,13 @@ AnyEvent::Chromi - Remotely control Google Chrome from Perl
     # Start in server mode
     my $chromi AnyEvent::Chromi->new(mode => 'server');
 
-=head2 DESCRIPTION
+=head1 DESCRIPTION
 
 AnyEvent::Chromi allows you to remotely control Google Chrome from a Perl script.
 It requires the Chromi extension L<https://github.com/smblott-github/chromi>, which
 exposes all of the Chrome Extensions API via a websocket connection.
 
-=head2 METHODS
+=head1 METHODS
 
 =over 4
 
@@ -246,7 +246,7 @@ In client mode: returns true if connected to chromix-server.
 
 =back
 
-=head2 EXAMPLES
+=head1 EXAMPLES
 
 =over
 
@@ -287,12 +287,12 @@ also properly supports multiple clients with one or more chrome instances.
 
 =back
 
-=head2 AUTHOR
+=head1 AUTHOR
 
 David Schweikert <david@schweikert.ch>, heavily influenced by Chromi/Chromix by
 Stephen Blott.
 
-=head2 SEE ALSO
+=head1 SEE ALSO
 
 =over
 
